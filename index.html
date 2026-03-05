@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PAX COUNTER — Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pastel-petal: #F5C2D1;
+    --grey:         #7A7476;
+    --graphite:     #363330;
+    --blush-pop:    #F1ACC3;
+    --pale-slate:   #BEB0B4;
+  }
+
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--graphite);
+    color: var(--pastel-petal);
+    font-family: 'DM Mono', monospace;
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Noise texture overlay ─────────────────────────────────────── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 99;
+    opacity: 0.35;
+  }
+
+  /* ── Radar pane ──────────────────────────────────────────────────── */
+  .radar-pane {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 2rem;
+  }
+
+  #radar { display: block; }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────── */
+  .sidebar {
+    width: 300px;
+    min-width: 300px;
+    border-left: 1px solid rgba(190,176,180,0.1);
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 1.5rem 1.5rem;
+    background: rgba(0,0,0,0.18);
+    backdrop-filter: blur(4px);
+  }
+
+  .brand {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 2rem;
+  }
+
+  .brand-title {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 2rem;
+    line-height: 1;
+    color: var(--blush-pop);
+    letter-spacing: -0.01em;
+  }
+
+  .brand-sub {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--grey);
+    margin-top: 0.4rem;
+  }
+
+  /* Stats row */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .stat {
+    background: rgba(245,194,209,0.04);
+    border: 1px solid rgba(245,194,209,0.08);
+    border-radius: 6px;
+    padding: 0.75rem;
+  }
+
+  .stat-value {
+    font-size: 1.8rem;
+    font-weight: 500;
+    color: var(--pastel-petal);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--grey);
+    margin-top: 0.3rem;
+  }
+
+  /* Device list */
+  .list-header {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--grey);
+    margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .device-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(122,116,118,0.4) transparent;
+  }
+
+  .device-list::-webkit-scrollbar       { width: 2px; }
+  .device-list::-webkit-scrollbar-thumb { background: rgba(122,116,118,0.4); border-radius: 2px; }
+
+  .device-item {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(190,176,180,0.06);
+  }
+
+  .d-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.4s;
+  }
+
+  .d-info { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+
+  .d-mac {
+    font-size: 0.62rem;
+    color: var(--pale-slate);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .d-bar-wrap {
+    height: 2px;
+    background: rgba(190,176,180,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .d-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  .d-rssi {
+    font-size: 0.68rem;
+    font-weight: 500;
+    text-align: right;
+    white-space: nowrap;
+    transition: color 0.4s;
+  }
+
+  /* Status bar */
+  .status-bar {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--grey);
+  }
+
+  .status-led {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--grey);
+    flex-shrink: 0;
+  }
+
+  .status-led.on {
+    background: #9ef0b4;
+    box-shadow: 0 0 8px #9ef0b4;
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%,100% { opacity:1; }
+    50%      { opacity:0.35; }
+  }
+
+  /* Entrance animation */
+  @keyframes slideIn {
+    from { opacity:0; transform:translateX(8px); }
+    to   { opacity:1; transform:translateX(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="radar-pane">
+  <canvas id="radar"></canvas>
+</div>
+
+<div class="sidebar">
+  <div class="brand">
+    <div class="brand-title">Pax Counter</div>
+    <div class="brand-sub">WiFi Probe · Live Radar</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value" id="s-count">0</div>
+      <div class="stat-label">Devices</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="s-peak">—</div>
+      <div class="stat-label">Peak RSSI</div>
+    </div>
+  </div>
+
+  <div class="list-header">
+    <span>Device</span>
+    <span>RSSI</span>
+  </div>
+
+  <div class="device-list" id="device-list"></div>
+
+  <div class="status-bar">
+    <div class="status-led" id="status-led"></div>
+    <span id="status-text">Connecting…</span>
+  </div>
+</div>
+
+<script>
+// ── Color helpers ───────────────────────────────────────────────────────
+const STRONG = { r:241, g:172, b:195 };  // blush-pop  → strong signal
+const WEAK   = { r:190, g:176, b:180 };  // pale-slate → weak signal
+
+function rssiT(rssi) {
+  return Math.max(0, Math.min(1, (rssi - (-30)) / (-85 - (-30))));
+}
+
+function rssiRGB(rssi, a = 1) {
+  const t = rssiT(rssi);
+  const r = Math.round(STRONG.r + (WEAK.r - STRONG.r) * t);
+  const g = Math.round(STRONG.g + (WEAK.g - STRONG.g) * t);
+  const b = Math.round(STRONG.b + (WEAK.b - STRONG.b) * t);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// ── Radar canvas ────────────────────────────────────────────────────────
+const canvas = document.getElementById('radar');
+const ctx    = canvas.getContext('2d');
+
+let size = 0, sweep = 0;
+let devices = [];
+
+// Stable angle per MAC (hash)
+function macAngle(mac) {
+  let h = 5381;
+  for (let c of mac) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return (h % 3600) / 3600 * Math.PI * 2;
+}
+
+// RSSI → fraction of radar radius (0=center, 1=edge)
+function rssiRadius(rssi, maxR) {
+  const t = rssiT(rssi);
+  return maxR * (0.1 + t * 0.82);
+}
+
+function resize() {
+  const pane = canvas.parentElement;
+  const d    = Math.min(pane.clientWidth, pane.clientHeight) * 0.88;
+  canvas.width  = d;
+  canvas.height = d;
+  size = d;
+}
+
+const RING_RSSI = [-30, -50, -70, -85];
+
+function draw() {
+  if (!size) return;
+  const cx = size / 2, cy = size / 2;
+  const R  = size / 2 * 0.92;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // Background disc
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(24,21,19,0.9)';
+  ctx.fill();
+  ctx.restore();
+
+  // Grid rings + dB labels
+  RING_RSSI.forEach((db) => {
+    const r = rssiRadius(db, R);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(190,176,180,0.1)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(122,116,118,0.55)';
+    ctx.font      = `${Math.max(9, size * 0.018)}px 'DM Mono', monospace`;
+    ctx.fillText(db + ' dB', cx + r + 4, cy - 4);
+  });
+
+  // Azimuth spokes
+  for (let a = 0; a < 8; a++) {
+    const ang = a * Math.PI / 4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R);
+    ctx.strokeStyle = 'rgba(190,176,180,0.06)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+  }
+
+  // Clip future drawing to disc
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Sweep sector (trailing glow)
+  const sLen = Math.PI / 2.5;
+  const grad = ctx.createLinearGradient(cx, cy,
+    cx + Math.cos(sweep) * R, cy + Math.sin(sweep) * R);
+  grad.addColorStop(0, 'rgba(241,172,195,0)');
+  grad.addColorStop(1, 'rgba(241,172,195,0.11)');
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, R, sweep - sLen, sweep);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Sweep leading edge
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(sweep) * R, cy + Math.sin(sweep) * R);
+  ctx.strokeStyle = 'rgba(241,172,195,0.65)';
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+
+  ctx.restore(); // unclip
+
+  // Border ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(190,176,180,0.15)';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+
+  // Devices
+  devices.forEach(d => {
+    const ang  = macAngle(d.mac);
+    const r    = rssiRadius(d.rssi, R);
+    const x    = cx + Math.cos(ang) * r;
+    const y    = cy + Math.sin(ang) * r;
+    const col  = rssiRGB(d.rssi);
+    const col0 = rssiRGB(d.rssi, 0);
+
+    // Glow halo
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, 14);
+    glow.addColorStop(0, rssiRGB(d.rssi, 0.25));
+    glow.addColorStop(1, col0);
+    ctx.beginPath();
+    ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Core dot
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    // Blip when sweep passes over
+    const diff = ((ang - sweep) + Math.PI * 2) % (Math.PI * 2);
+    if (diff < 0.4) {
+      const fade = 1 - diff / 0.4;
+      ctx.beginPath();
+      ctx.arc(x, y, 4 + (1 - fade) * 14, 0, Math.PI * 2);
+      ctx.strokeStyle = rssiRGB(d.rssi, fade * 0.7);
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+  });
+
+  // Center pip
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(241,172,195,0.8)';
+  ctx.fill();
+}
+
+function animate() {
+  sweep = (sweep + 0.018) % (Math.PI * 2);
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────────────
+function pct(rssi) {
+  return Math.max(0, Math.min(100, ((rssi + 85) / 55) * 100)).toFixed(1);
+}
+
+function renderList(devs) {
+  document.getElementById('s-count').textContent = devs.length;
+  document.getElementById('s-peak').textContent  =
+    devs.length ? devs[0].rssi + ' dB' : '—';
+
+  const list = document.getElementById('device-list');
+  list.innerHTML = devs.map(d => {
+    const col = rssiRGB(d.rssi);
+    const p   = pct(d.rssi);
+    return `
+      <div class="device-item" style="animation:slideIn 0.25s ease">
+        <div class="d-dot" style="background:${col};box-shadow:0 0 5px ${col}"></div>
+        <div class="d-info">
+          <div class="d-mac">${d.mac}</div>
+          <div class="d-bar-wrap">
+            <div class="d-bar" style="width:${p}%;background:${col}"></div>
+          </div>
+        </div>
+        <div class="d-rssi" style="color:${col}">${d.rssi}<br><span style="font-size:0.5rem;color:var(--grey)">dBm</span></div>
+      </div>`;
+  }).join('');
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────
+const led  = document.getElementById('status-led');
+const stxt = document.getElementById('status-text');
+
+function connect() {
+  const ws = new WebSocket('ws://localhost:8765');
+
+  ws.onopen = () => {
+    led.className  = 'status-led on';
+    stxt.textContent = 'Live · Scanning';
+  };
+
+  ws.onmessage = e => {
+    devices = JSON.parse(e.data);
+    renderList(devices);
+  };
+
+  ws.onclose = () => {
+    led.className  = 'status-led';
+    stxt.textContent = 'Disconnected — retrying…';
+    setTimeout(connect, 2000);
+  };
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => { resize(); });
+resize();
+animate();
+connect();
+</script>
+</body>
+</html>
